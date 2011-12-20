@@ -566,3 +566,16 @@ button.ui-button::-moz-focus-inner { border: 0; padding: 0; } /* reset extra pad
  */
 .ui-progressbar { height:2em; text-align: left; }
 .ui-progressbar .ui-progressbar-value {margin: -1px; height:100%; }
+/* Custom table
+ *
+ */
+TR {
+	vertical-align:top;
+}
+TD {
+	vertical-align:top;
+}
+.extern-big-button {
+	padding:4px;
+	margin:8px;
+}
