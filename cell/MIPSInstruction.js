@@ -16,13 +16,21 @@ function MIPSInstruction(_assemblyAnchor, _binaryAnchor) {
 
 MIPSInstruction.prototype.compile = function() {
 	var iLine;
+	var binaryCode;
 	for (iLine = 0; iLine < this.assembly.length; iLine++) {
-		this.binary[iLine] = this.MIPSParse(this.assembly[iLine].toLowerCase());
+		if ((binaryCode = this.MIPSParse(this.assembly[iLine].toLowerCase())) === null) continue;
+		this.binary[iLine] = binaryCode;
+	}
+	for (iLine = 0; iLine < this.assembly.length; iLine++) {
+		if (this.assembly[iLine].toLowerCase().match("(j[^r]|jal|bne|beq)")) {
+			this.binary[iLine] = this.resolveLabel(this.assembly[iLine], this.binary[iLine]);
+		}
 	}
 	$('textarea#textarea_binary').val(this.binary.join("\n"));
 }
 
 MIPSInstruction.prototype.MIPSParse = function(_code) {
+	if (_code.length == 0) { return null; }
 	var codeArray = _code.split(' ');
 	var codeArgument = new String();
 	var codeSeparator = ",";
@@ -106,7 +114,7 @@ MIPSInstruction.prototype.MIPSParse = function(_code) {
 			binaryCode = MIPS_1adrLabel(0x2, argArray[0]);
 			break;
 		case "jr": 
-			binaryCode = MIPS_1address(0x0, argArray[0]);
+			binaryCode = MIPS_1address(0x8, argArray[0]);
 			break;
 		case "jal": 
 			binaryCode = MIPS_1adrLabel(0x3, argArray[0]);
@@ -127,18 +135,43 @@ MIPSInstruction.prototype.MIPSParse = function(_code) {
 		case "cfw": break;
 		
 		// space allocator
-		case "org": this.programAddress = argArray[0]; break;
+		case "org": this.programAddress = argArray[0] / 4; break;
 		default: 
 			if (codeArray[0].match("^[#]")) {
 				return null;
 			}
 			else {
-				this.labelName = codeArray[0].replace(":", "");
-				this.labelAddress = this.programAddress;
+				this.labelName.push(codeArray[0].replace(":", "").returnEssential());
+				this.labelAddress.push(this.programAddress);
+				binaryCode = null;
 			}
 			
 	}
-	return binaryCode;
+	
+	if (binaryCode != null) {
+		return (this.programAddress++).toHexString().substring(6) + "->" + binaryCode.toHexString();	
+	}
+	return null;
+}
+
+MIPSInstruction.prototype.resolveLabel = function(_code, _binary) {
+	var binaryOffset = 0;
+	var argArray = _code.split(" ");
+	var codeArray = argArray[argArray.length - 1].split(",");
+	var seekLabel = codeArray[codeArray.length - 1].returnEssential();
+	var seekIndex = this.labelName.indexOf(seekLabel);
+	var currentPc = parseInt(_binary.substr(binaryOffset, 4), 16);
+	var relOffset = this.labelAddress[seekIndex] - (currentPc + 1);
+	
+	if (relOffset < 0) {
+		relOffset = (0xFFFFFFF + relOffset + 1) & 0xFFFF;
+	}
+	if (argArray[0].toLowerCase().match("(beq|bne)")) {
+		return _binary.substr(0, 6) + (parseInt(_binary.substr(8, 8), 16) | relOffset).toHexString();
+	}
+	else {
+		return _binary.substr(0, 6) + (parseInt(_binary.substr(8, 8), 16) | this.labelAddress[seekIndex]).toHexString();
+	} 
 }
 
 function MIPS_3address(_aluOpcode, _rd, _rs, _rt){
@@ -150,19 +183,41 @@ function MIPS_3adrShift(_aluOpcode, _rd, _rt, _shamt){
 }
 
 function MIPS_3adrImm(_opcode, _rt, _rs, _imm){
+	var imm = parseInt(_imm);
+	if (imm < 0) {
+		imm = (0xFFFFFFFF + imm + 1) & 0xFFFF;
+	}
+	return (_opcode << 26) | (_rs << 21) | (_rt << 16) | (imm);
 }
 
 function MIPS_2adrImm(_opcode, _rt, _imm) {
+	var imm = parseInt(_imm);
+	if (imm < 0) {
+		imm = (0xFFFFFFFF + imm + 1) & 0xFFFF;
+	}
+	return (_opcode << 26) | (_rt << 16) | (imm);
 }
 
-function MIPS_2adrOffset(_opcode, _rt, _rs) {
+function MIPS_2adrOffset(_opcode, _rt, _mix) {
+	var openParen = _mix.indexOf('(');
+	var closeParen = _mix.indexOf(')');
+	var offset = parseInt(_mix.substring(0, openParen));
+	var base = parseInt(_mix.substring(openParen + 1, closeParen));
+	
+	if (offset < 0) {
+		offset = (0xFFFFFFFF + offset + 1) & 0xFFFF;
+	}
+	return (_opcode << 26) | (base << 21) | (_rt << 16) | (offset);
 }
 
 function MIPS_1adrLabel(_opcode, _label) {
+	return (_opcode << 26);
 }
 
-function MIPS_1address(_opcode, _rs) {
+function MIPS_1address(_aluOpcode, _rs) {
+	return (_rs << 21) | (_aluOpcode);
 }
 
 function MIPS_branch(_opcode, _rs, _rt, _label) {
+	return (_opcode << 26) | (_rt << 21) | (_rs << 16);
 }

@@ -1,4 +1,5 @@
 Number.prototype.toHexString = function() {
+	if (this === null) { return null; }
 	if (isNaN(this)) { return this; }
 	var num;
 	var hex;

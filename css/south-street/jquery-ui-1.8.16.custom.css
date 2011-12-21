@@ -569,6 +569,10 @@ button.ui-button::-moz-focus-inner { border: 0; padding: 0; } /* reset extra pad
 /* Custom table
  *
  */
+#textarea_assembly, #textarea_binary {
+	font-family:"Courier New", Courier, monospace;
+	font-size: 125%;
+}
 TR {
 	vertical-align:top;
 }
