@@ -25,8 +25,23 @@ MIPSInstruction.prototype.compile = function() {
 		if (this.assembly[iLine].toLowerCase().match("(j[^r]|jal|bne|beq)")) {
 			this.binary[iLine] = this.resolveLabel(this.assembly[iLine], this.binary[iLine]);
 		}
+		this.binary[iLine] = this.computeChecksum(this.binary[iLine]);
 	}
+	this.binary.push(":00000001FF");
 	$('textarea#textarea_binary').val(this.binary.join("\n"));
+}
+
+MIPSInstruction.prototype.computeChecksum = function(_binary) {
+	if (_binary !== undefined && (_binary.match("[:][0-9A-Fa-f]{6,6}[0]{2,2}[0-9A-Fa-f]+"))) {
+		var ics;
+		var checkSum = 0;
+		for (ics = 1; ics < _binary.length; ics += 2) {
+			checkSum += parseInt(_binary.substr(ics, 2), 16);
+		}
+		checkSum = (~checkSum + 1) & 0xFF;
+		return _binary + checkSum.toHexString().substring(8);
+	}
+	return _binary;
 }
 
 MIPSInstruction.prototype.MIPSParse = function(_code) {
@@ -130,9 +145,9 @@ MIPSInstruction.prototype.MIPSParse = function(_code) {
 		case "halt": binaryCode = 0xFFFFFFFF; break;
 		case "push": break;
 		case "pop": break;
-		case "nop": binaryCode = 0x00000001; break;
-		case "chw": break;
-		case "cfw": break;
+		case "nop": binaryCode = 0x00000000; break;
+		case "chw": 
+		case "cfw": binaryCode = parseInt(argArray[0]); break;
 		
 		// space allocator
 		case "org": this.programAddress = argArray[0] / 4; break;
@@ -149,15 +164,24 @@ MIPSInstruction.prototype.MIPSParse = function(_code) {
 	}
 	
 	if (binaryCode != null) {
-		return (this.programAddress++).toHexString().substring(6) + "->" + binaryCode.toHexString();	
+		return ":04" + (this.programAddress++).toHexString().substring(6) + "00" + binaryCode.toHexString().substring(2);	
 	}
 	return null;
 }
 
 MIPSInstruction.prototype.resolveLabel = function(_code, _binary) {
-	var binaryOffset = 0;
+	var binaryOffset = 3;
 	var argArray = _code.split(" ");
-	var codeArray = argArray[argArray.length - 1].split(",");
+	if (_code.indexOf('#') != -1) {
+		var ri;
+		for (ri = 0; ri < argArray.length; ri++) {
+			if (argArray[ri].match('[#]')) { break; }
+		}
+		var codeArray = argArray[ri - 1].split(",");
+	}
+	else {
+		var codeArray = argArray[argArray.length - 1].split(",");
+	}
 	var seekLabel = codeArray[codeArray.length - 1].returnEssential();
 	var seekIndex = this.labelName.indexOf(seekLabel);
 	var currentPc = parseInt(_binary.substr(binaryOffset, 4), 16);
@@ -167,10 +191,12 @@ MIPSInstruction.prototype.resolveLabel = function(_code, _binary) {
 		relOffset = (0xFFFFFFF + relOffset + 1) & 0xFFFF;
 	}
 	if (argArray[0].toLowerCase().match("(beq|bne)")) {
-		return _binary.substr(0, 6) + (parseInt(_binary.substr(8, 8), 16) | relOffset).toHexString();
+		return _binary.substr(0, 9) 
+			+ (parseInt(_binary.substr(9, 8), 16) | relOffset).toHexString().substring(2);
 	}
 	else {
-		return _binary.substr(0, 6) + (parseInt(_binary.substr(8, 8), 16) | this.labelAddress[seekIndex]).toHexString();
+		return _binary.substr(0, 9) 
+			+ (parseInt(_binary.substr(9, 8), 16) | this.labelAddress[seekIndex]).toHexString().substring(2);
 	} 
 }
 
