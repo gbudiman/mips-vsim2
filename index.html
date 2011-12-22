@@ -10,7 +10,11 @@
 		<script type="text/javascript" src="js/interaction.js"></script>
 		<script type="text/javascript" src="js/StringExtension.js"></script>
 		<script type="text/javascript" src="js/NumberExtension.js"></script>
+		<script type="text/javascript" src="js/MathExtension.js"></script>
 		<script type="text/javascript" src="cell/MIPSInstruction.js"></script>
+		<script type="text/javascript" src="cell/core.js"></script>
+		<script type="text/javascript" src="cell/programCounter.js"></script>
+		<script type="text/javascript" src="cell/arithmeticLogicUnit.js"></script>
 		<script type="text/javascript">
 			$(function(){
 
@@ -58,7 +62,7 @@
 				});
 				
 				//hover states on the static widgets
-				$('#dialog_link, ul#icons li, #button_compile').hover(
+				$('#dialog_link, ul#icons li, #button_compile, #button_simulate').hover(
 					function() { $(this).addClass('ui-state-hover'); }, 
 					function() { $(this).removeClass('ui-state-hover'); }
 				);
@@ -76,11 +80,12 @@
 			ul#icons span.ui-icon {float: left; margin: 0 4px;}
 		</style>
     </head>
-    <body>
+    <body onload="computeCache()">
         <div id="tabs">
         	<ul>
 				<li><a href="#tabs-3">Cache Settings</a></li>
 				<li><a href="#tabs-1">Program Source</a></li>
+				<li><a href="#tabs-2">Visualization</a></li>
         	</ul>
 			<div id="tabs-1">
 				<table width="100%">
@@ -88,58 +93,211 @@
 					<th width="50%" class="ui-state-default ui-corner-tr">MIPS binary listing</th>
 					<tr>
 						<td>
-							<textarea cols="48" rows="32" id="textarea_assembly"></textarea><br />
+							<textarea cols="48" rows="24" id="textarea_assembly"></textarea><br />
 							<button class="ui-state-default ui-corner-all extern-big-button" 
 									id="button_compile"
 									onclick="button_compile_click('textarea_assembly', 'textarea_binary')">Compile</button>
 						</td>
 						<td>
-							<textarea cols="48" rows="32" id="textarea_binary" readonly=yes></textarea><br />
-							<button class="ui-state-disabled ui-corner-all extern-big-button" id="button_simulate">Simulate</button>
+							<textarea cols="48" rows="24" id="textarea_binary"></textarea><br />
+							<button class="ui-state-default ui-corner-all extern-big-button" 
+									id="button_simulate"
+									onclick="button_simulate_click()">Simulate</button>
 						</td>
 					</tr> 
 				</table>
 			</div>
 			<div id="tabs-3">
+				<div class="ui-widget">
+					<div class="ui-state-highlight ui-corner-all" style="margin-top: 20px; padding: 0 .7em;"> 
+						<p><span class="ui-icon ui-icon-info" style="float: left; margin-right: .3em;"></span>
+						Cache entry size and word size will be rounded to the next higher power of 2 if the input are not power of 2.</p>
+					</div>
+				</div>
+				<br />
 				<table width="100%">
-					<th width="50%" class="ui-state-default ui-corner-tl">Instruction Cache</th>
-					<th width="50%" class="ui-state-default ui-corner-tr">Data Cache</th>
+					<th width="50%" class="ui-state-default ui-corner-tl">Instruction Cache Parameter</th>
+					<th width="50%" class="ui-state-default ui-corner-tr">Data Cache Parameter</th>
 					<tr>
 						<td>
 							<table>
 								<tr>
-									<td class="ui-state-default ui-corner-tl">Cache set associativity</td>
-									<td><input type="text" size=2 value=1 /></td>
+									<td class="ui-state-default ui-corner-tl">Set associativity</td>
+									<td><input type="text" id="icacheSet" size=1 value=1 onkeyup="computeCache()" /></td>
+									<td><input type="checkbox" id="icacheFullAssoc" onchange="fullAssocChange(this, 'icacheSet')"/> Fully Associative</td>
+									<td rowspan=3>
+										<table id='icacheSummary'>
+											<tr>
+												<td class="ui-state-default ui-corner-tl">Tag</td>
+												<td class="ui-state-default">Index</td>
+												<td class="ui-state-default">Word</td>
+												<td class="ui-state-default">Byte</td>
+												<td class="ui-state-default ui-corner-tr"></td>
+											</tr>
+											<tr>
+												<td class="ui-state-default ui-corner-bl">
+													<input type="text" size=1 id="icache_tag" disabled=true />
+												</td>
+												<td class="ui-state-default">
+													<input type="text" size=1 id="icache_index" disabled=true />
+												</td>
+												<td class="ui-state-default">
+													<input type="text" size=1 id="icache_word" disabled=true />
+												</td>
+												<td class="ui-state-default">
+													<input type="text" size=1 id="icache_byte" value=2 disabled=true />
+												</td>
+												<td class="ui-state-default ui-corner-br">bits</td>
+											</tr>
+										</table>
+									</td>
 								</tr>
 								<tr>
-									<td class="ui-state-default">Number of entries per set</td>
-									<td><input type="text" size=2 value=16 /></td>
+									<td class="ui-state-default">Entries per set</td>
+									<td><input type="text" id="icacheEntries" size=1 value=16 onkeyup="computeCache()" /></td>
+									<td><span id="#icacheEntriesDiag"></span></td>
 								</tr>
 								<tr>
-									<td class="ui-state-default ui-corner-bl">Number of words per block</td>
-									<td><input type="text" size=2 value=1 /></td>
+									<td class="ui-state-default ui-corner-bl">Words per entry</td>
+									<td><input type="text" id="icacheWords" size=1 value=1 onkeyup="computeCache()" /></td>
+									<td><span id="icacheWordsDiag"></span></td>
 								</tr>
 							</table>
 						</td>
 						<td>
 							<table>
 								<tr>
-									<td class="ui-state-default ui-corner-tl">Cache set associativity</td>
-									<td><input type="text" size=2 value=2 /></td>
+									<td class="ui-state-default ui-corner-tl">Set associativity</td>
+									<td><input type="text" id="dcacheSet" size=1 value=2 onkeyup="computeCache()" /></td>
+									<td><input type="checkbox" id="dcacheFullAssoc" onchange="fullAssocChange(this, 'dcacheSet')" /> Fully Associative</td>
+									<td rowspan=3>
+										<table>
+											<tr>
+												<td class="ui-state-default ui-corner-tl">Tag</td>
+												<td class="ui-state-default">Index</td>
+												<td class="ui-state-default">Word</td>
+												<td class="ui-state-default">Byte</td>
+												<td class="ui-state-default ui-corner-tr"></td>
+											</tr>
+											<tr>
+												<td class="ui-state-default ui-corner-bl">
+													<input type="text" size=1 id="dcache_tag" disabled=true />
+												</td>
+												<td class="ui-state-default">
+													<input type="text" size=1 id="dcache_index" disabled=true />
+												</td>
+												<td class="ui-state-default">
+													<input type="text" size=1 id="dcache_word" disabled=true />
+												</td>
+												<td class="ui-state-default">
+													<input type="text" size=1 id="dcache_byte" value=2 disabled=true />
+												</td>
+												<td class="ui-state-default ui-corner-br">bits</td>
+											</tr>
+										</table>
+									</td>
 								</tr>
 								<tr>
-									<td class="ui-state-default">Number of entries per set</td>
-									<td><input type="text" size=2 value=16 /></td>
+									<td class="ui-state-default">Entries per set</td>
+									<td><input type="text" id="dcacheEntries" size=1 value=16 onkeyup="computeCache()" /></td>
+									<td id="dcacheEntriesDiag"></td>
 								</tr>
 								<tr>
-									<td class="ui-state-default ui-corner-bl">Number of words per block</td>
-									<td><input type="text" size=2 value=2 /></td>
+									<td class="ui-state-default ui-corner-bl">Words per entry</td>
+									<td><input type="text" id="dcacheWords" size=1 value=2 onkeyup="computeCache()" /></td>
+									<td id="dcacheWordsDiag"></td>
 								</tr>
 							</table>
 						</td>
 					</tr>
+					<tr>
+						<td class="ui-state-default ui-corner-bl"></td>
+						<td class="ui-state-default ui-corner-br"></td>
+					</tr>
+					<tr>
+						<th class="ui-state-default ui-corner-tl">Physical Instruction Cache (1 way)</th>
+						<th class="ui-state-default ui-corner-tr">Physical Data Cache (1 way)</th>
+					</tr>
+					<tr>
+						<td>
+							<table width=100%>
+								<tr>
+									<td class="ui-state-default ui-corner-tl">Valid</td>
+									<td class="ui-state-default">LRU</td>
+									<td class="ui-state-default">Tag</td>
+									<td class="ui-state-default ui-corner-tr">Data</td>
+									<td class="ui-state-processing">Size per entry</td>
+								</tr>
+								<tr>
+									<td class="ui-state-default">1 bit</td>
+									<td class="ui-state-default" id="icacheDiagram_lru"></td>
+									<td class="ui-state-default" id="icacheDiagram_tag"></td>
+									<td class="ui-state-default" id="icacheDiagram_data"></td>
+									<td class="ui-state-processing" id="icacheDiagram_size"></td>
+								</tr>
+								<tr>
+									<td colspan=4 class="ui-state-default ui-corner-bottom" id="icacheDiagram_total"></td>
+									<td class="ui-state-processing" id="icacheDiagram_usableSize"></td>
+								</tr>
+							</table>
+						</td>
+						<td>
+							<table width=100%>
+								<tr>
+									<td class="ui-state-default ui-corner-tl">Valid</td>
+									<td class="ui-state-default">Dirty</td>
+									<td class="ui-state-default">LRU</td>
+									<td class="ui-state-default">Tag</td>
+									<td class="ui-state-default ui-corner-tr">Data</td>
+									<td class="ui-state-processing">Size per entry</td>
+								</tr>
+								<tr>
+									<td class="ui-state-default">1 bit</td>
+									<td class="ui-state-default">1 bit</td>
+									<td class="ui-state-default" id="dcacheDiagram_lru"></td>
+									<td class="ui-state-default" id="dcacheDiagram_tag"></td>
+									<td class="ui-state-default" id="dcacheDiagram_data"></td>
+									<td class="ui-state-processing" id="dcacheDiagram_size"></td>
+								</tr>
+								<tr>
+									<td colspan=5 class="ui-state-default ui-corner-bottom" id="dcacheDiagram_total"></td>
+									<td class="ui-state-processing" id="dcacheDiagram_usableSize"></td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+					<tr>
+						<th class="ui-state-default ui-corner-bl" id="icacheDiagram_overview"></th>
+						<th class="ui-state-default ui-corner-br" id="dcacheDiagram_overview"></th>
+					</tr>
 				</table>
 			</div>
-        </div>
+        	<div id="tabs-2">
+        		<table>
+        			<tr>
+        				<th class="ui-state-default ui-corner-tl">Fetch</th>
+						<th class="ui-state-default">Decode</th>
+						<th class="ui-state-default">Execute</th>
+						<th class="ui-state-default">Memory</th>
+						<th class="ui-state-default ui-corner-tr">Writeback</th>
+        			</tr>
+					<tr>
+						<!-- Fetch stage -->
+						<td>
+							<table>
+								<tr>
+									<td class="ui-state-default ui-corner-left">PC</td>
+									<td id="currentPc">0x00000000</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+					<td class="ui-state-default ui-corner-bottom" colspan=5></td>
+        		</table>
+				<button class="ui-state-default ui-corner-left" onclick="vis_reset()">Reset</button>
+				<button class="ui-state-default" onclick="vis_clock()">Clock</button>
+				<button class="ui-state-default ui-corner-right" onclick="vis_runToEnd()">Run to end</button>
+        	</div>
+		</div>
     </body>
 </html>
