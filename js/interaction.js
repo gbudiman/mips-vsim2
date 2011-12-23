@@ -129,6 +129,7 @@ function computeCache(){
 
 function button_simulate_click() {
 	vis_reset();
+	$("li #visWindow").click();
 }
 
 function vis_clock() {
